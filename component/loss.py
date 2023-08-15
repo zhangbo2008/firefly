@@ -37,7 +37,7 @@ class TargetLMLoss(Loss):
 
         # 将labels中不属于target的部分，设为ignore_index，只计算target部分的loss
         labels = torch.where(target_mask == 1, input_ids, self.ignore_index)
-        shift_logits = logits[..., :-1, :].contiguous()
+        shift_logits = logits[..., :-1, :].contiguous() # 因为我们生成的logits最后一个
         shift_labels = labels[..., 1:].contiguous()
         # Flatten the tokens
         loss = self.loss_fn(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))

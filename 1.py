@@ -179,7 +179,7 @@ def init_components(args, training_args):
     # 查看模型种各种类型的参数的情况
     verify_model_dtype(model)
 
-    # 初始化损失函数
+    # 初始化损失函数 ########################!!!!!!!!!!!!!!!!!!!!!
     loss_func = TargetLMLoss(ignore_index=-100)
 
     # 指加载训练集
