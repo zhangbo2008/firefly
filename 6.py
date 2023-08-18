@@ -5,6 +5,10 @@
 
 '''
 多卡设置
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node={num_gpus} train_qlora.py --train_args_file train_args/qlora/baichuan-7b-sft-qlora.json\
+
+
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2  6.py
 
 '''
 
@@ -126,6 +130,7 @@ if 1:
     if os.environ.get('LOCAL_RANK') is not None:
         local_rank = int(os.environ.get('LOCAL_RANK', '0'))
         device_map = {'': local_rank}
+    device_map = {'': '0'}
     # 加载模型
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
@@ -172,6 +177,8 @@ if 1:
 
     # casts all the non int8 modules to full precision (fp32) for stability
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
+
+
     print(f'memory footprint of model: {model.get_memory_footprint()/(1024*1024*1024)} GB')
     # 找到所有需要插入adapter的全连接层
     # target_modules = find_all_linear_names(model)
@@ -249,7 +256,7 @@ if 1:
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        # tokenizer=tokenizer,
+        tokenizer=tokenizer,
         data_collator=data_collator,
         compute_loss=loss_func
     )

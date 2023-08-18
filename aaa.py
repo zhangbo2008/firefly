@@ -1,11 +1,66 @@
 #-=========参数写到这里得了:
-arg='train_args/qlora/chatglm2-6b-sft-qlora.json'
 
+
+
+
+'''
+多卡设置
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node={num_gpus} train_qlora.py --train_args_file train_args/qlora/baichuan-7b-sft-qlora.json\
+
+
+CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node=2  6.py
+
+'''
+
+
+
+ar='tmp.json'
+aaa=r"""
+{
+    "output_dir": "output/firefly-chatglm2-6b",
+    "model_name_or_path": "THUDM/chatglm2-6b",
+    "train_file": "./data/dummy_data.jsonl",
+    "num_train_epochs": 1,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 2e-4,
+    "max_seq_length": 1024,
+    "logging_steps": 300,
+    "save_steps": 500,
+    "save_total_limit": 1,
+    "lr_scheduler_type": "constant_with_warmup",
+    "warmup_steps": 3000,
+    "lora_rank": 64,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+
+    "gradient_checkpointing": true,
+    "disable_tqdm": false,
+    "optim": "paged_adamw_32bit",
+    "seed": 42,
+    "fp16": true,
+    "report_to": "tensorboard",
+    "dataloader_num_workers": 0,
+    "save_strategy": "steps",
+    "weight_decay": 0,
+    "max_grad_norm": 0.3,
+    "remove_unused_columns": false
+}
+
+
+
+
+
+
+
+"""
+with open('tmp.json','w') as f:
+    f.write(aaa)
 import bitsandbytes
 
 
 from transformers import AutoTokenizer, BitsAndBytesConfig
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model, AdaLoraConfig,prepare_model_for_kbit_training
 from transformers import (
     set_seed,
     HfArgumentParser,
@@ -27,68 +82,31 @@ from component.trainer import LoRATrainer
 from component.loss import TargetLMLoss
 
 
-def verify_model_dtype(model):
-    """
-    查看模型种各种类型的参数的情况
-    """
-    dtype2param_num = defaultdict(int)  # 每种数据类型的参数量
-    dtype2param_name = defaultdict(list)  # 每种数据类型的参数名称
-    dtype2trainable_param_num = defaultdict(int)  # 每种数据类型参与训练的参数量
-    dtype2trainable_param_name = defaultdict(list)  # 每种数据类型参与训练的参数名称
-    for name, p in model.named_parameters():
-        dtype = p.dtype
-        dtype2param_num[dtype] += p.numel()
-        dtype2param_name[dtype].append(name)
-        if p.requires_grad:
-            dtype2trainable_param_num[dtype] += p.numel()
-            dtype2trainable_param_name[dtype].append(name)
-    # 统计全部参数中，各种类型参数分布
-    total = 0
-    print('verify all params of the model')
-    for k, v in dtype2param_num.items():
-        total += v
-    for k, v in dtype2param_num.items():
-        print(k, v, v / total)
-    for k, v in dtype2trainable_param_name.items():
-        print(k, v)
-
-    print()
-    # 统计可训练参数中，各种类型参数分布
-    print('verify trainable params the model')
-    total_trainable = 0
-    for k, v in dtype2trainable_param_num.items():
-        total_trainable += v
-    for k, v in dtype2trainable_param_num.items():
-        print(k, v, v / total_trainable)
-    for k, v in dtype2trainable_param_num.items():
-        print(k, v)
+if 1:
 
 
-def find_all_linear_names(model):
-    """
-    找出所有全连接层，为所有全连接添加adapter
-    """
-    cls = bnb.nn.Linear4bit
-    lora_module_names = set()
-    for name, module in model.named_modules():
-        if isinstance(module, cls):
-            names = name.split('.')
-            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if 'lm_head' in lora_module_names:  # needed for 16-bit
-        lora_module_names.remove('lm_head')
-    return list(lora_module_names)
+    # 进行一些配置和检查
 
 
-def setup_everything():
-#     parser = argparse.ArgumentParser('')
-#     parser.add_argument("--train_args_file", type=str, default='train_args/baichuan-sft-qlora.json', help="")
-#     args = parser.parse_args()
-    
+
     train_args_file = ar
     # 读取训练的参数配置
     parser = HfArgumentParser((QLoRAArguments, TrainingArguments))
     # 解析得到自定义参数，以及自带参数
+
+    
+
+
+
+
+
+
+
+
+
+
+
     args, training_args = parser.parse_json_file(json_file=train_args_file)
     # 创建输出目录
     if not os.path.exists(training_args.output_dir):
@@ -97,17 +115,15 @@ def setup_everything():
     # logger.info("train_args:{}".format(training_args))
     # 设置随机种子
     set_seed(training_args.seed)
-    return args, training_args
+    # args, training_args = setup_everything()
+    # 加载各种组件
 
 
-def init_components(args, training_args):
-    """
-    初始化各个组件
-    """
     logger.info('Initializing components...')
     # 下面的设置至关重要，否则无法多卡训练
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
+    print('是否ddp',ddp)
     training_args.ddp_find_unused_parameters = False
     device_map = "auto"
     # if we are in a distributed setting, we need to set the device map and max memory per device
@@ -162,31 +178,65 @@ def init_components(args, training_args):
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
     print(f'memory footprint of model: {model.get_memory_footprint()/(1024*1024*1024)} GB')
     # 找到所有需要插入adapter的全连接层
-    target_modules = find_all_linear_names(model)
-    # 初始化lora配置
-    config = LoraConfig(
-        r=args.lora_rank,
-        lora_alpha=args.lora_alpha,
-        target_modules=target_modules,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        task_type="CAUSAL_LM",
+    # target_modules = find_all_linear_names(model)
+
+    
+    
+    config = AdaLoraConfig(
+    task_type='CAUSAL_LM', inference_mode=False,
+    r=8,
+    lora_alpha=32, lora_dropout=0.1,
+    target_modules=["query", "value"]
     )
     
     
     
-    # config = AdaLoraConfig(
-    # task_type='CAUSAL_LM', inference_mode=False,
-    # r=8,
-    # lora_alpha=32, lora_dropout=0.1,
-    # target_modules=["query", "value"]
-    # )
+    
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
-    model.config.torch_dtype = torch.float32
-
+    model.config.torch_dtype = torch.float16
+    print('打印参数的类型.')
     # 查看模型种各种类型的参数的情况
-    verify_model_dtype(model)
+    dtype2param_num = defaultdict(int)  # 每种数据类型的参数量
+    dtype2param_name = defaultdict(list)  # 每种数据类型的参数名称
+    dtype2trainable_param_num = defaultdict(int)  # 每种数据类型参与训练的参数量
+    dtype2trainable_param_name = defaultdict(list)  # 每种数据类型参与训练的参数名称
+    for name, p in model.named_parameters():
+        dtype = p.dtype
+        dtype2param_num[dtype] += p.numel()
+        dtype2param_name[dtype].append(name)
+        if p.requires_grad:
+            dtype2trainable_param_num[dtype] += p.numel()
+            dtype2trainable_param_name[dtype].append(name)
+    # 统计全部参数中，各种类型参数分布
+    total = 0
+    print('verify all params of the model')
+    for k, v in dtype2param_num.items():
+        total += v
+    for k, v in dtype2param_num.items():
+        print(k, v, v / total)
+    for k, v in dtype2trainable_param_name.items():
+        print(k, v)
+
+    print()
+    # 统计可训练参数中，各种类型参数分布
+    print('verify trainable params the model')
+    total_trainable = 0
+    for k, v in dtype2trainable_param_num.items():
+        total_trainable += v
+    for k, v in dtype2trainable_param_num.items():
+        print(k, v, v / total_trainable)
+    for k, v in dtype2trainable_param_num.items():
+        print(k, v)
+
+
+
+
+
+
+
+
+
 
     # 初始化损失函数 ########################!!!!!!!!!!!!!!!!!!!!!
     loss_func = TargetLMLoss(ignore_index=-100)
@@ -207,17 +257,19 @@ def init_components(args, training_args):
         data_collator=data_collator,
         compute_loss=loss_func
     )
-    return trainer
 
 
-if 1:
 
-    ar=r'train_args/qlora/baichuan-7b-sft-qlora.json'
 
-    # 进行一些配置和检查
-    args, training_args = setup_everything()
-    # 加载各种组件
-    trainer = init_components(args, training_args)
+
+
+
+
+
+
+
+
+    # trainer = init_components(args, training_args)
     # 开始训练
 
 if 1:
@@ -225,6 +277,7 @@ if 1:
     train_result = trainer.train()
     # 保存最好的checkpoint
     final_save_path = join(training_args.output_dir, 'final')
+    print('保存模型')
     trainer.save_model(final_save_path)  # Saves the tokenizer too
     # 保存训练指标
     metrics = train_result.metrics
