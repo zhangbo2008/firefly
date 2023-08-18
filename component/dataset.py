@@ -63,7 +63,7 @@ class ChatGLM2SFTDataset(SFTDataset):
         # 每条数据格式为: [Round 1]\n\n问：{input1}\n\n答：{target1}</s>[Round 2]\n\n问：{input2}\n\n答：{target2}</s>...
         data = self.data_list[index]
         data = json.loads(data)
-        conversation = data['conversation']
+        conversation = data['conversation']  # 一个conversation是一个对话对的列表.
         input_format = '[Round {}]\n\n问：{}\n\n答：'
         target_format = '{}'
 
