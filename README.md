@@ -1,3 +1,13 @@
+基于firefly 和 kaggle免费服务器 写的 chatglm2微调.
+notebook7266de09ac (1).ipynb
+后续会持续优化.
+
+
+
+
+
+
+
 # Firefly(流萤): 中文对话式大语言模型
 
 <div align="left">
